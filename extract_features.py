@@ -144,8 +144,10 @@ def load_and_validate(path: Path) -> np.ndarray:
             file=sys.stderr,
         )
     if sw != EXPECTED_SAMPWIDTH:
-        raise ExtractionError(
-            f"{path}: sample width {sw*8}-bit != expected {EXPECTED_SAMPWIDTH*8}-bit PCM"
+        print(
+            f"warning: {path}: sample width {sw*8}-bit != {EXPECTED_SAMPWIDTH*8}-bit; "
+            f"MonoLoader will convert",
+            file=sys.stderr,
         )
 
     return es.MonoLoader(filename=str(path), sampleRate=EXPECTED_SAMPLE_RATE)()
