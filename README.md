@@ -33,6 +33,35 @@ WAV file → [Validate format] → [Load audio] → [Tier 1: DSP] → [Tier 2: C
 ```bash
 pip install -r requirements.txt
 ```
+
+## Bulk track download
+
+`download_top50.py` pulls the Kaggle `anxods/spotify-top-50-playlist-songs-anxods`
+dataset, then resolves each row via `yt-dlp`'s YouTube search and saves the best
+available audio as a WAV under `tracks/top50/`.
+
+```bash
+# Auth (Kaggle expects username + API key)
+export KAGGLE_USERNAME=<your_kaggle_username>
+export KAGGLE_API_TOKEN=<your_kaggle_api_key>
+
+# Inspect what will be downloaded
+python download_top50.py --dry-run --limit 5
+
+# Fetch all 50 tracks (skips files already present).
+# --cookies-from-browser bypasses YouTube's bot check; pick a browser
+# you're logged into. Requires `deno` (or node) on PATH so yt-dlp can
+# fetch the EJS challenge solver.
+python download_top50.py --cookies-from-browser chrome
+
+# Extract features straight into the Kaggle CSV schema
+python extract_features.py tracks/top50/*.wav --csv --output top50_features.csv
+```
+
+Flags: `--output-dir`, `--limit`, `--dataset`, `--dry-run`,
+`--cookies-from-browser`. The script keeps the source sample rate (no
+resampling); `extract_features.py` handles resampling internally.
+
 ## Usage
 
 ```bash
