@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: playlist_rag_postgres
+    environment:
+      POSTGRES_USER: playlist
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: playlist_rag
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U playlist -d playlist_rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

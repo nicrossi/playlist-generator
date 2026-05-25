@@ -37,3 +37,18 @@ typing_extensions==4.15.0
 urllib3==2.7.0
 webencodings==0.5.1
 yt-dlp==2026.3.17
+pandas>=2.0
+pyarrow>=14.0
+rapidfuzz>=3.0
+
+# playlist_rag indexing pipeline
+pydantic-settings>=2.0
+python-dotenv>=1.0
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pgvector>=0.3
+alembic>=1.13
+langchain>=0.3
+langchain-core>=0.3
+langchain-openai>=0.2
+tenacity>=8.0

@@ -1,157 +1,111 @@
-# Audio Feature Extraction PoC
+# Playlist Generator
 
-CLI tool that takes WAV files in, runs them through three layers of audio 
-analysis, and produces a structured JSON feature vector out. It also has 
-a second mode that validates those extracted features against a reference CSV.
+A retrieval-augmented playlist generator over a unified catalog of
+Spotify + Genius tracks. The system takes a natural-language query
+("melancholic late-night drives", "upbeat songs for cleaning the apartment")
+and returns a sequenced playlist with per-track explanations.
 
-## Essentia Adapter
+This repo currently covers the **data ingestion + indexing** half of the
+system. Retrieval, query rewriting, and sequencing are the next stages.
 
-Spotify deprecated the `audio_features` Web API endpoint in November 2024, so
-for any track outside our pre-collected Kaggle dataset there is no longer an
-upstream source for the per-track audio attributes (energy, danceability,
-valence, tempo, key, etc.) that the recommender relies on. This tool fills that
-gap by extracting equivalent features locally via [Essentia](https://essentia.upf.edu/):
-DSP primitives cover the objective fields (tempo, key, loudness, duration),
-Essentia's `Danceability` plus a heuristic blend cover the composite fields
-(danceability, energy), and pre-trained MusiCNN-based classifier heads cover
-the perceptual ones (valence, arousal, acousticness, instrumentalness,
-speechiness). The output schema is Spotify-compatible — the `--csv` mode
-produces rows that drop straight into the Kaggle CSV — so downstream code
-treats Kaggle-sourced and Essentia-sourced tracks uniformly. Two Spotify
-fields aren't inferred from audio and take fixed defaults: `liveness = 0.0`
-(studio-recorded majority) and `time_signature = 4` (4/4 majority); query
-rewriters should treat filters on those fields as no-ops for Essentia-path
-tracks.
+## Components
 
-```
-                                                                                                      ┌─→ JSON (default)
-WAV file → [Validate format] → [Load audio] → [Tier 1: DSP] → [Tier 2: Composite] → [Tier 3: ML] → AudioFeatures
-                                                                                                      └─→ Spotify-schema CSV (--csv)
-```
+| Component | What it does | Deep dive |
+|---|---|---|
+| `download_top50.py` | Pulls Kaggle Top-50 dataset, resolves each row via YouTube + `yt-dlp`, saves WAVs. | [`docs/download_top50.md`](docs/download_top50.md) |
+| `extract_features.py` | Spotify-compatible audio features from local WAV (Essentia + MusiCNN). | [`docs/extract_features.md`](docs/extract_features.md) |
+| `unify.py` | Fuzzy-joins two Spotify CSVs with the Genius lyrics CSV into one parquet catalog. | [`docs/dataset_unification.md`](docs/dataset_unification.md) |
+| `playlist_rag/` | Indexes the unified parquet → LLM description + embedding → Postgres + pgvector. | [`docs/indexing_pipeline.md`](docs/indexing_pipeline.md) |
+| Design log | Why each component is shaped the way it is. | [`docs/decisions.md`](docs/decisions.md) |
+
 ## Install
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Bulk track download
+`requirements.txt` covers all components (audio extraction + indexing). The
+audio path has heavy ML dependencies (`essentia-tensorflow`); skip them if
+you only need the indexing pipeline.
 
-`download_top50.py` pulls the Kaggle `anxods/spotify-top-50-playlist-songs-anxods`
-dataset, then resolves each row via `yt-dlp`'s YouTube search and saves the best
-available audio as a WAV under `tracks/top50/`.
+## End-to-end quickstart
+
+### 1. Get the data
 
 ```bash
-# Auth (Kaggle expects username + API key)
-export KAGGLE_USERNAME=<your_kaggle_username>
-export KAGGLE_API_TOKEN=<your_kaggle_api_key>
+# Kaggle datasets (popular + obscure Spotify + Genius lyrics) → data/
+```
 
-# Inspect what will be downloaded
-python download_top50.py --dry-run --limit 5
+### 2. Unify Spotify + Genius
 
-# Fetch all 50 tracks (skips files already present).
-# --cookies-from-browser bypasses YouTube's bot check; pick a browser
-# you're logged into. Requires `deno` (or node) on PATH so yt-dlp can
-# fetch the EJS challenge solver.
-python download_top50.py --cookies-from-browser chrome
+```bash
+python unify.py \
+    --spotify-popular data/high_popularity_spotify_data.csv \
+    --spotify-obscure data/low_popularity_spotify_data.csv \
+    --genius data/genius_song_lyrics.csv \
+    --out data/unified_tracks.parquet \
+    --report-dir reports/
+```
 
-# Extract features straight into the Kaggle CSV schema
+First run ~10 min (Genius stream), cached after.
+
+### 3. Index into Postgres
+
+```bash
+docker compose up -d                    # Postgres 16 + pgvector
+cp .env.example .env                    # set OPENAI_API_KEY
+alembic upgrade 0001_initial            # create tables (no HNSW yet)
+python -m playlist_rag.cli.index \
+    --parquet data/unified_tracks.parquet \
+    --limit 20                          # smoke test on 20 tracks
+python -m playlist_rag.cli.index \
+    --parquet data/unified_tracks.parquet
+alembic upgrade head                    # build HNSW index after bulk load
+```
+
+See [`docs/indexing_pipeline.md`](docs/indexing_pipeline.md) for the full
+indexer reference (stages, schema, resumability, error handling).
+
+### 4. Extract features for tracks outside the dataset
+
+```bash
 python extract_features.py tracks/top50/*.wav --csv --output top50_features.csv
 ```
 
-Flags: `--output-dir`, `--limit`, `--dataset`, `--dry-run`,
-`--cookies-from-browser`. The script keeps the source sample rate (no
-resampling); `extract_features.py` handles resampling internally.
+See [`docs/extract_features.md`](docs/extract_features.md).
 
-## Usage
+## Repository layout
 
-```bash
-# Single file → pretty-printed JSON on stdout
-python extract_features.py track.wav
-
-# Multiple files → JSON array written to file
-python extract_features.py *.wav --output results.json
-
-# Spotify-compatible CSV (single row per track, exact column order)
-python extract_features.py *.wav --csv --output new_tracks.csv
-
-# Append to an existing Spotify CSV (skip header)
-python extract_features.py track.wav --csv --no-header >> spotify_audio_features.csv
-
-# Validate against expected values CSV
-python extract_features.py --validate expected_values.csv
+```
+playlist-generator/
+├── README.md                  # this file
+├── docs/                      # per-component deep dives + decisions log
+├── requirements.txt           # all deps (audio + indexing)
+├── docker-compose.yml         # Postgres 16 + pgvector
+├── alembic.ini, alembic/      # database migrations
+├── .env.example               # config template
+│
+├── download_top50.py          # WAV downloader
+├── extract_features.py        # Essentia/MusiCNN audio feature extractor
+├── unify.py                   # Spotify + Genius unification
+├── playlist_rag/              # indexing pipeline Python package
+│   ├── config.py, schemas.py, db.py
+│   ├── indexing/              # 4 stages: normalize, describe, embed, persist
+│   └── cli/index.py
+│
+├── data/                      # input CSVs + unified parquet (gitignored)
+├── tracks/                    # downloaded WAVs (gitignored)
+├── models/                    # cached Essentia/MusiCNN TF models
+└── reports/                   # unification match reports
 ```
 
-First run downloads ~4 TensorFlow models into `./models/` (~200 MB). Cached after.
+## Status
 
-## Stage 1 - Digital Signal Processing (DSP) Features
-
-**Input:** Raw audio array `np.ndarray` (1-D, float32).
-
-**Output:** Scalar values describing objectively measurable properties. Deterministic stuff.
-They depend only on the math applied to the signal.
-
-| Output | Type  | Range | Description |
-| ------ |-------| ----- | ----------- |
-| `duration_ms` | `int` | [0, ∞) | `round(1000 * len(audio) / 44100)`. Matches Spotify's `duration_ms`. |
-| `tempo` | `float` | typically 60 - 200 | Estimated beats per minute. |
-| `tempo_confidence` | `float` | [0, 1] | How sure the algorithm is. Low = ambiguous rhythm (e.g. free jazz, ambient). |
-| `key` | `int` | 0–11 | Spotify pitch-class index (0 = C, 1 = C#, ..., 11 = B). |
-| `mode` | `int` | 0 or 1 | Scale modality, Spotify convention (1 = major, 0 = minor). |
-| `key_confidence` | `float` | [0, 1] | How sure the algorithm is about the key. |
-| `loudness` | `float` | typically -30 to -5 | Integrated loudness (LUFS internally; named `loudness` to match Spotify, which uses peak/RMS dB — values are systematically offset by a few dB). |
-
-## Stage 2 - Composite Features
-
-**Input:** The audio array + `loudness` from Stage 1.
-
-**Output:** Two scalar values that don't exist as a single algorithm, they're computed by combining or transforming other measurements.
-
-**Danceability** uses Essentia's built-in `Danceability()` algorithm directly.
-Returns a value in [0, 3], normalized to [0, 1].
-
-**Energy** is 50% normalized loudness, 30% RMS energy, 20% spectral flux:
-```python
-energy = 0.5 * loudness_norm + 0.3 * rms_norm + 0.2 * flux_norm
-```
-The weights can be tuned against Spotify's energy.
-
-| Output | Type | Range | Description                                                                 |
-| ------ | ---- | ----- |-----------------------------------------------------------------------------|
-| `danceability` | `float` | [0, 1] | Rhythm stability + beat strength + tempo (blended by Essentia's algorithm). |
-| `energy` | `float` | [0, 1] | 50% loudness + 30% RMS + 20% spectral flux.                                 |
-
-
-## Stage 3 - ML Features
-
-We use Essentia's Tensorflow models.
-1. Run audio through MusiCNN (a pre-trained music CNN) to get embeddings, a high-dimensional representation of the audio's "musical content."
-2. Feed those embeddings into a classifier head trained on a specific task (emomusic, voice/instrumental, mood/acoustic).
-3. The classifier outputs per-frame predictions; the agent mean-pools across time to get a single value for the whole track.
-
-Specifically:
-
-- Valence + arousal come from the `emomusic` model — a regression head that outputs both values in `[1, 9]`, normalized to `[0, 1]`.
-- Instrumentalness is the `instrumental_prob` from a binary classifier.
-- Acousticness is the `acoustic_prob` from another binary classifier.
-- Speechiness is the agent's approximation: `voice_prob * (1 - key_confidence)`. Spoken word = high voice presence + weak tonal structure. Cute heuristic — we'll see if it holds up.
-- Embedding is the 200-dimensional penultimate layer of MusiCNN itself, mean-pooled — this is your similarity-search vector for later.
-
-**Input:** The audio array + `key_confidence` from Stage 1.
-**Output:** Six values from neural-network inference.
-
-| Output | Type | Range | Description                                               |
-| ------ | ---- | ----- |-----------------------------------------------------------|
-| `valence` | `float` | [0, 1] | Musical positivity (0 = Sad/Angry, 1 = happy).            |
-| `arousal` | `float` | [0, 1] | Energetic activation (0 = calm, 1 = intense).             |
-| `acousticness` | `float` | [0, 1] | Confidence the track is acoustic vs. electronic/produced. |
-| `instrumentalness` | `float` | [0, 1] | Confidence the track lacks vocals.                        |
-| `speechiness` | `float` | [0, 1] | Confidende the track contains spoken words.               |
-| `embedding` | `list[float]` | 200-D vector) | Dense audio representation for similarity search.         |
-## Validation CSV format
-
-`expected_values.csv` uses Spotify's `audio_features` schema, with one extra leading column `file_path` pointing at the local WAV. The harness:
-
-- Compares each numeric feature to its Spotify reference with a per-feature tolerance (tempo ±5 BPM octave-tolerant, loudness ±3 dB, duration ±2000 ms, [0,1] features ±0.15–0.30).
-- Compares `key` (0–11) and `mode` (0/1) as ints directly; key allows fifth-confusion (±7 semitones mod 12).
-- Reports Pearson `r` per feature across all rows — the real signal for heuristic features like `energy`, `danceability`, `speechiness`.
-- Reports `liveness` and `time_signature` as fixed-default fields (0.0 and 4 respectively — see "Essentia Adapter" above for rationale).
+- ✅ Data ingestion (Spotify CSVs, Genius lyrics, Kaggle Top-50 WAVs)
+- ✅ Local audio feature extraction (Essentia adapter)
+- ✅ Dataset unification (fuzzy Spotify ↔ Genius join)
+- ✅ Indexing pipeline (LLM description + embedding → Postgres + pgvector)
+- ⬜ Retrieval engine (hybrid SQL + vector search)
+- ⬜ Query rewriter / intent parser
+- ⬜ Playlist sequencing + per-track explanation
+- ⬜ End-user CLI

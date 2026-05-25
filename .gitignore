@@ -3,3 +3,7 @@
 __pycache__/
 tracks/
 .env
+.cache/
+reports/
+data/unified_tracks.parquet
+data/
