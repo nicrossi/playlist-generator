@@ -5,8 +5,8 @@ Spotify + Genius tracks. The system takes a natural-language query
 ("melancholic late-night drives", "upbeat songs for cleaning the apartment")
 and returns a sequenced playlist with per-track explanations.
 
-This repo currently covers the **data ingestion + indexing** half of the
-system. Retrieval, query rewriting, and sequencing are the next stages.
+The repo covers **data ingestion, indexing, and playlist generation** from
+natural-language queries.
 
 ## Components
 
@@ -16,6 +16,7 @@ system. Retrieval, query rewriting, and sequencing are the next stages.
 | `extract_features.py` | Spotify-compatible audio features from local WAV (Essentia + MusiCNN). | [`docs/extract_features.md`](docs/extract_features.md) |
 | `unify.py` | Fuzzy-joins two Spotify CSVs with the Genius lyrics CSV into one parquet catalog. | [`docs/dataset_unification.md`](docs/dataset_unification.md) |
 | `playlist_rag/` | Indexes the unified parquet → LLM description + embedding → Postgres + pgvector. | [`docs/indexing_pipeline.md`](docs/indexing_pipeline.md) |
+| `playlist_rag.cli.generate` | NL query → hybrid retrieval → ranked, sequenced playlist + explanation. | [`docs/generation_pipeline.md`](docs/generation_pipeline.md) |
 | Design log | Why each component is shaped the way it is. | [`docs/decisions.md`](docs/decisions.md) |
 
 ## Install
@@ -74,6 +75,18 @@ python extract_features.py tracks/top50/*.wav --csv --output top50_features.csv
 
 See [`docs/extract_features.md`](docs/extract_features.md).
 
+### 5. Generate a playlist
+
+```bash
+python -m playlist_rag.cli.generate "música tranquila para estudiar 2 horas sin reggaetón"
+python -m playlist_rag.cli.generate "upbeat rock for a workout" --json
+```
+
+Requires indexed data, HNSW migration (`alembic upgrade head`), and `OPENAI_API_KEY` in `.env`.
+
+See [`docs/generation_pipeline.md`](docs/generation_pipeline.md) for stages,
+schemas, filters, sequencing, and CLI reference.
+
 ## Repository layout
 
 ```
@@ -91,7 +104,12 @@ playlist-generator/
 ├── playlist_rag/              # indexing pipeline Python package
 │   ├── config.py, schemas.py, db.py
 │   ├── indexing/              # 4 stages: normalize, describe, embed, persist
-│   └── cli/index.py
+│   ├── query/                 # NL → QueryIntent
+│   ├── retrieval/             # hybrid vector + SQL search
+│   ├── playlist/              # rank, sequence, explain
+│   └── cli/
+│       ├── index.py
+│       └── generate.py
 │
 ├── data/                      # input CSVs + unified parquet (gitignored)
 ├── tracks/                    # downloaded WAVs (gitignored)
@@ -105,7 +123,7 @@ playlist-generator/
 - ✅ Local audio feature extraction (Essentia adapter)
 - ✅ Dataset unification (fuzzy Spotify ↔ Genius join)
 - ✅ Indexing pipeline (LLM description + embedding → Postgres + pgvector)
-- ⬜ Retrieval engine (hybrid SQL + vector search)
-- ⬜ Query rewriter / intent parser
-- ⬜ Playlist sequencing + per-track explanation
-- ⬜ End-user CLI
+- ✅ Retrieval engine (hybrid SQL + vector search)
+- ✅ Query rewriter / intent parser
+- ✅ Playlist sequencing + per-track explanation
+- ✅ End-user CLI (`python -m playlist_rag.cli.generate`)
