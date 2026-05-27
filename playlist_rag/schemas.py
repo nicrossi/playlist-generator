@@ -83,3 +83,63 @@ class NormalizedTrack(BaseModel):
     @property
     def has_lyrics(self) -> bool:
         return bool(self.lyrics_clean and self.lyrics_clean.strip())
+
+
+class QueryIntent(BaseModel):
+    """Structured representation of a natural-language playlist request."""
+
+    semantic_query: str = Field(
+        description=(
+            "English search phrase capturing mood, activity, and sonic intent. "
+            "Used for embedding-based retrieval."
+        ),
+    )
+    target_duration_minutes: float | None = Field(
+        default=None,
+        description="Desired playlist length in minutes.",
+    )
+    moods: list[Mood] = Field(default_factory=list)
+    energy_levels: list[EnergyQualitative] = Field(default_factory=list)
+    languages: list[str] = Field(default_factory=list)
+    include_genres: list[str] = Field(default_factory=list)
+    exclude_genres: list[str] = Field(default_factory=list)
+    exclude_artists: list[str] = Field(default_factory=list)
+    min_tempo: float | None = None
+    max_tempo: float | None = None
+    min_energy: float | None = Field(default=None, ge=0.0, le=1.0)
+    max_energy: float | None = Field(default=None, ge=0.0, le=1.0)
+    min_instrumentalness: float | None = Field(default=None, ge=0.0, le=1.0)
+    prefer_popular: bool = False
+    prefer_obscure: bool = False
+
+
+class RetrievedTrack(BaseModel):
+    track_id: int
+    spotify_track_id: str
+    track_name: str
+    track_artist: str
+    description: str
+    mood: str | None = None
+    energy_qualitative: str | None = None
+    inferred_subgenre: str | None = None
+    tempo: float | None = None
+    energy: float | None = None
+    valence: float | None = None
+    instrumentalness: float | None = None
+    duration_ms: int | None = None
+    popularity_tier: str | None = None
+    vector_score: float = 0.0
+    final_score: float = 0.0
+
+
+class PlaylistTrack(RetrievedTrack):
+    position: int
+    reason: str = ""
+
+
+class PlaylistResult(BaseModel):
+    query: str
+    intent: QueryIntent
+    tracks: list[PlaylistTrack]
+    total_duration_minutes: float
+    explanation: str

@@ -23,5 +23,10 @@ class Settings(BaseSettings):
     lyrics_excerpt_chars: int = 800
     batch_commit_size: int = 10
 
+    retrieval_top_k: int = 80
+    default_duration_minutes: float = 60.0
+    max_playlist_tracks: int = 50
+    artist_spacing: int = 2
+
 
 settings = Settings()
