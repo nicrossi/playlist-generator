@@ -96,6 +96,17 @@ python -m playlist_rag.cli.evaluate --dataset eval/queries.jsonl --limit 1
 
 See [`docs/evaluation.md`](docs/evaluation.md) for metrics, dataset format, and cost notes.
 
+### 7. Launch the web UI
+
+```bash
+streamlit run playlist_rag/ui/app.py
+```
+
+A Streamlit front end over the same pipeline: enter a query, get the
+explanation, the sequenced playlist (with Spotify links), a panel showing what
+the model parsed, and the retrieval pool. Same prerequisites as the CLI
+(indexed data, `alembic upgrade head`, `OPENAI_API_KEY` in `.env`).
+
 ## Repository layout
 
 ```
@@ -117,10 +128,11 @@ playlist-generator/
 │   ├── retrieval/             # hybrid vector + SQL search
 │   ├── playlist/              # rank, sequence, explain
 │   ├── eval/                  # RAG evaluation metrics
-│   └── cli/
-│       ├── index.py
-│       ├── generate.py
-│       └── evaluate.py
+│   ├── cli/
+│   │   ├── index.py
+│   │   ├── generate.py
+│   │   └── evaluate.py
+│   └── ui/                    # Streamlit web app (app.py)
 │
 ├── data/                      # input CSVs + unified parquet (gitignored)
 ├── tracks/                    # downloaded WAVs (gitignored)
@@ -139,3 +151,4 @@ playlist-generator/
 - ✅ Playlist sequencing + per-track explanation
 - ✅ End-user CLI (`python -m playlist_rag.cli.generate`)
 - ✅ RAG evaluation (`python -m playlist_rag.cli.evaluate`)
+- ✅ Web UI (`streamlit run playlist_rag/ui/app.py`)

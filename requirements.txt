@@ -52,3 +52,6 @@ langchain>=0.3
 langchain-core>=0.3
 langchain-openai>=0.2
 tenacity>=8.0
+
+# web UI
+streamlit>=1.40

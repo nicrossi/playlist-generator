@@ -1,0 +1,8 @@
+[theme]
+# Spotify-like dark theme: black #121212 · surface #181818 · green #1DB954
+base = "dark"
+primaryColor = "#1DB954"
+backgroundColor = "#121212"
+secondaryBackgroundColor = "#181818"
+textColor = "#FFFFFF"
+font = "sans serif"
