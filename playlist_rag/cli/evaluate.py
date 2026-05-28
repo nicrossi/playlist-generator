@@ -23,6 +23,10 @@ def _print_summary(report) -> None:
     print(f"  context_recall:     {_fmt(s.context_recall_mean)}")
     print(f"  faithfulness:       {_fmt(s.faithfulness_mean)}")
     print(f"  answer_relevance:   {_fmt(s.answer_relevance_mean)}")
+    print(f"  duration_adherence: {_fmt(s.duration_adherence_mean)}")
+    print(f"  exclusion_adherence:{_fmt(s.exclusion_adherence_mean)}")
+    print(f"  artist_diversity:   {_fmt(s.artist_diversity_mean)}")
+    print(f"  genre_diversity:    {_fmt(s.genre_diversity_mean)}")
     print("\nPer query:")
     for q in report.per_query:
         print(
@@ -30,6 +34,10 @@ def _print_summary(report) -> None:
             f"rec={_fmt(q.context_recall)} "
             f"faith={_fmt(q.faithfulness)} "
             f"ans={_fmt(q.answer_relevance)} "
+            f"dur={_fmt(q.duration_adherence)} "
+            f"excl={_fmt(q.exclusion_adherence)} "
+            f"art-div={_fmt(q.artist_diversity)} "
+            f"gen-div={_fmt(q.genre_diversity)} "
             f"(retrieved={q.retrieved_count}, playlist={q.playlist_count})"
         )
     print()

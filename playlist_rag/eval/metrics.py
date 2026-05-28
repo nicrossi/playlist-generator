@@ -8,6 +8,12 @@ from playlist_rag.eval.judge import (
     judge_statement_coverage_batch,
     judge_track_relevance_batch,
 )
+from playlist_rag.eval.objective import (
+    artist_diversity,
+    duration_adherence,
+    exclusion_adherence,
+    genre_diversity,
+)
 from playlist_rag.eval.schemas import EvalCase, QueryMetrics
 from playlist_rag.schemas import GenerationRun, RetrievedTrack
 
@@ -120,6 +126,24 @@ def compute_query_metrics(
         playlist_count=len(result.tracks),
         retrieval_relaxed=run.trace.retrieval_relaxed,
     )
+
+    # Deterministic constraint + diversity metrics: no LLM, always computed.
+    try:
+        metrics.duration_adherence, dur_note = duration_adherence(
+            result.intent, result.total_duration_minutes
+        )
+        metrics.judge_notes["duration_adherence"] = dur_note
+        metrics.exclusion_adherence, excl_note = exclusion_adherence(
+            result.intent, result.tracks
+        )
+        metrics.judge_notes["exclusion_adherence"] = excl_note
+        metrics.artist_diversity, art_note = artist_diversity(result.tracks)
+        metrics.judge_notes["artist_diversity"] = art_note
+        metrics.genre_diversity, gen_note = genre_diversity(result.tracks)
+        metrics.judge_notes["genre_diversity"] = gen_note
+    except Exception as e:
+        logger.exception("objective metrics failed for %s", case.id)
+        metrics.judge_notes["objective_metrics_error"] = str(e)
 
     if not skip_retrieval_judge and retrieved:
         prec, note = context_precision(case.query, retrieved)

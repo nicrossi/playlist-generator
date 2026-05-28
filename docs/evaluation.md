@@ -12,8 +12,17 @@ retrieval (tracks as contexts, playlist + explanation as the answer).
 | **Context recall** | Retrieval (RAGAS-style) | Fraction of `reference_statements` in the eval case that the retrieved track contexts collectively support (LLM judge). |
 | **Faithfulness** | Generation | RAGAS: fraction of factual claims in the explanation attributable to playlist track contexts. |
 | **Answer relevance** | Generation | RAGAS answer relevancy: mean cosine similarity between embeddings of questions generated from the answer and the original user query. |
+| **Duration adherence** | Objective | Closeness of playlist length to the requested `target_duration_minutes`. |
+| **Exclusion adherence** | Objective | Fraction of explicit artist/genre bans the final playlist honored. |
+| **Artist diversity** | Objective | Distinct-artist ratio (unique / total tracks). |
+| **Genre diversity** | Objective | Normalized entropy over `inferred_subgenre` across the playlist. |
 
 Contexts are track records, not text chunks; the answer is a structured playlist.
+
+The four **objective** metrics are deterministic (no LLM judge, no API cost) and
+are **always computed** — including under `--skip-retrieval-judge` and
+`--skip-generation-judge`. They check the final playlist against the parsed
+`QueryIntent` constraints rather than against retrieval/generation quality.
 
 ## Formulas
 
@@ -65,6 +74,49 @@ One LLM call judges all statements against the same retrieved context block.
    answer — not meta-questions about track count or playlist structure.
 2. Embed original user query and each generated request (`text-embedding-3-small`).
 3. Average cosine similarities.
+
+## Objective metrics (constraint adherence + diversity)
+
+Deterministic, judge-free; computed in `eval/objective.py` from `result.intent`
+and `result.tracks`. Each is `None` when not applicable. Detail (actual vs
+target, violated bans, max artist share, distinct genre count) lands in
+`judge_notes`.
+
+**Duration adherence** (only when `target_duration_minutes` is set). With
+\(\text{dev} = |\text{actual} - \text{target}| / \text{target}\):
+
+\[
+\text{duration\_adherence} =
+\begin{cases}
+1 & \text{dev} \le 0.15 \\
+\max\!\left(0,\ 1 - \dfrac{\text{dev} - 0.15}{1 - 0.15}\right) & \text{otherwise}
+\end{cases}
+\]
+
+Full score within ±15% of the target; linear decay to 0 at 100% off.
+
+**Exclusion adherence** (only when `exclude_artists` or `exclude_genres` is
+non-empty). A ban is *violated* if any track matches it (case-insensitive
+substring, same logic as `retrieval/filters.py`: artist against `track_artist`,
+genre against `inferred_subgenre`):
+
+\[
+\text{exclusion\_adherence} = 1 - \frac{\#\{\text{violated bans}\}}{\#\{\text{bans}\}}
+\]
+
+**Artist diversity** (≥1 track) — distinct-artist ratio, 1.0 = no repeats:
+
+\[
+\text{artist\_diversity} = \frac{|\{\text{distinct artists}\}|}{|\text{tracks}|}
+\]
+
+**Genre diversity** (≥2 tracks) — normalized Shannon entropy over
+`inferred_subgenre` (`None` bucketed as `"unknown"`); 0.0 for a single genre,
+1.0 for a perfectly even spread:
+
+\[
+\text{genre\_diversity} = \frac{-\sum_g p_g \ln p_g}{\ln(\#\text{distinct genres})}
+\]
 
 ## Prerequisites
 
@@ -128,6 +180,7 @@ playlist_rag/eval/
 ├── dataset.py      load JSON / JSONL
 ├── context.py      format tracks for judges
 ├── judge.py        LLM judges (track relevance, statement recall, faithfulness, answer relevance)
+├── objective.py    deterministic constraint + diversity metrics (no LLM)
 ├── metrics.py      compute_query_metrics()
 └── runner.py       run_evaluation()
 ```

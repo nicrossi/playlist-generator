@@ -26,6 +26,10 @@ def _summarize(per_query: list[QueryMetrics]) -> EvalSummary:
         context_recall_mean=_mean([q.context_recall for q in per_query]),
         faithfulness_mean=_mean([q.faithfulness for q in per_query]),
         answer_relevance_mean=_mean([q.answer_relevance for q in per_query]),
+        duration_adherence_mean=_mean([q.duration_adherence for q in per_query]),
+        exclusion_adherence_mean=_mean([q.exclusion_adherence for q in per_query]),
+        artist_diversity_mean=_mean([q.artist_diversity for q in per_query]),
+        genre_diversity_mean=_mean([q.genre_diversity for q in per_query]),
     )
 
 

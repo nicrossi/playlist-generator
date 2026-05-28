@@ -24,6 +24,10 @@ class QueryMetrics(BaseModel):
     context_recall: float | None = None
     faithfulness: float | None = None
     answer_relevance: float | None = None
+    duration_adherence: float | None = None
+    exclusion_adherence: float | None = None
+    artist_diversity: float | None = None
+    genre_diversity: float | None = None
     retrieved_count: int = 0
     playlist_count: int = 0
     retrieval_relaxed: bool = False
@@ -36,6 +40,10 @@ class EvalSummary(BaseModel):
     context_recall_mean: float | None = None
     faithfulness_mean: float | None = None
     answer_relevance_mean: float | None = None
+    duration_adherence_mean: float | None = None
+    exclusion_adherence_mean: float | None = None
+    artist_diversity_mean: float | None = None
+    genre_diversity_mean: float | None = None
 
 
 class EvalReport(BaseModel):
