@@ -17,6 +17,7 @@ natural-language queries.
 | `unify.py` | Fuzzy-joins two Spotify CSVs with the Genius lyrics CSV into one parquet catalog. | [`docs/dataset_unification.md`](docs/dataset_unification.md) |
 | `playlist_rag/` | Indexes the unified parquet → LLM description + embedding → Postgres + pgvector. | [`docs/indexing_pipeline.md`](docs/indexing_pipeline.md) |
 | `playlist_rag.cli.generate` | NL query → hybrid retrieval → ranked, sequenced playlist + explanation. | [`docs/generation_pipeline.md`](docs/generation_pipeline.md) |
+| `playlist_rag.cli.evaluate` | RAG metrics: context precision/recall, faithfulness, answer relevance. | [`docs/evaluation.md`](docs/evaluation.md) |
 | Design log | Why each component is shaped the way it is. | [`docs/decisions.md`](docs/decisions.md) |
 
 ## Install
@@ -87,6 +88,14 @@ Requires indexed data, HNSW migration (`alembic upgrade head`), and `OPENAI_API_
 See [`docs/generation_pipeline.md`](docs/generation_pipeline.md) for stages,
 schemas, filters, sequencing, and CLI reference.
 
+### 6. Evaluate (optional)
+
+```bash
+python -m playlist_rag.cli.evaluate --dataset eval/queries.jsonl --limit 1
+```
+
+See [`docs/evaluation.md`](docs/evaluation.md) for metrics, dataset format, and cost notes.
+
 ## Repository layout
 
 ```
@@ -107,9 +116,11 @@ playlist-generator/
 │   ├── query/                 # NL → QueryIntent
 │   ├── retrieval/             # hybrid vector + SQL search
 │   ├── playlist/              # rank, sequence, explain
+│   ├── eval/                  # RAG evaluation metrics
 │   └── cli/
 │       ├── index.py
-│       └── generate.py
+│       ├── generate.py
+│       └── evaluate.py
 │
 ├── data/                      # input CSVs + unified parquet (gitignored)
 ├── tracks/                    # downloaded WAVs (gitignored)
@@ -127,3 +138,4 @@ playlist-generator/
 - ✅ Query rewriter / intent parser
 - ✅ Playlist sequencing + per-track explanation
 - ✅ End-user CLI (`python -m playlist_rag.cli.generate`)
+- ✅ RAG evaluation (`python -m playlist_rag.cli.evaluate`)

@@ -277,5 +277,6 @@ Shared with indexing: `openai_api_key`, `llm_model`, `embedding_model`,
 | Doc | Role |
 |---|---|
 | [`indexing_pipeline.md`](indexing_pipeline.md) | Builds the catalog this pipeline reads |
+| [`evaluation.md`](evaluation.md) | Context precision/recall, faithfulness, answer relevance |
 | [`dataset_unification.md`](dataset_unification.md) | Upstream parquet schema |
 | [`decisions.md`](decisions.md) | Design rationale (pgvector, structured LLM output, etc.) |
