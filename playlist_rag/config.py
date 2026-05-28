@@ -28,5 +28,10 @@ class Settings(BaseSettings):
     max_playlist_tracks: int = 50
     artist_spacing: int = 2
 
+    eval_judge_batch_size: int = 10
+    eval_max_retrieved_to_judge: int = 40
+    eval_judge_temperature: float = 0.0
+    eval_answer_relevance_num_questions: int = 3
+
 
 settings = Settings()

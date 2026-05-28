@@ -86,7 +86,6 @@ class NormalizedTrack(BaseModel):
 
 
 class QueryIntent(BaseModel):
-    """Structured representation of a natural-language playlist request."""
 
     semantic_query: str = Field(
         description=(
@@ -143,3 +142,15 @@ class PlaylistResult(BaseModel):
     tracks: list[PlaylistTrack]
     total_duration_minutes: float
     explanation: str
+
+
+class GenerationTrace(BaseModel):
+
+    retrieved_candidates: list[RetrievedTrack] = Field(default_factory=list)
+    retrieval_relaxed: bool = False
+
+
+class GenerationRun(BaseModel):
+
+    result: PlaylistResult
+    trace: GenerationTrace
