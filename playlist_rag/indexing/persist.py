@@ -140,3 +140,14 @@ def get_completed_ids(session: Session) -> set[str]:
         )
     ).all()
     return {r[0] for r in rows}
+
+
+def delete_index_status(session: Session, spotify_track_ids: list[str]) -> int:
+    if not spotify_track_ids:
+        return 0
+    result = session.execute(
+        delete(TrackIndexStatus).where(
+            TrackIndexStatus.spotify_track_id.in_(spotify_track_ids)
+        )
+    )
+    return result.rowcount or 0
