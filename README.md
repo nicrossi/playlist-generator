@@ -51,7 +51,20 @@ python unify.py \
 
 First run ~10 min (Genius stream), cached after.
 
-### 3. Index into Postgres
+### 3. (Optional) Backfill missing lyrics
+
+For tracks without a Genius match (~70% of the catalog), fetch lyrics from
+[lyrics.ovh](https://github.com/NTag/lyrics.ovh) without re-running `unify.py`:
+
+```bash
+python -m playlist_rag.cli.backfill_lyrics --limit 20 --backup
+python -m playlist_rag.cli.backfill_lyrics --backup --clear-index-status
+python -m playlist_rag.cli.index --parquet data/unified_tracks.parquet
+```
+
+See [`docs/lyrics_backfill.md`](docs/lyrics_backfill.md).
+
+### 4. Index into Postgres
 
 ```bash
 docker compose up -d                    # Postgres 16 + pgvector
@@ -68,7 +81,7 @@ alembic upgrade head                    # build HNSW index after bulk load
 See [`docs/indexing_pipeline.md`](docs/indexing_pipeline.md) for the full
 indexer reference (stages, schema, resumability, error handling).
 
-### 4. Extract features for tracks outside the dataset
+### 5. Extract features for tracks outside the dataset
 
 ```bash
 python extract_features.py tracks/top50/*.wav --csv --output top50_features.csv
@@ -76,7 +89,7 @@ python extract_features.py tracks/top50/*.wav --csv --output top50_features.csv
 
 See [`docs/extract_features.md`](docs/extract_features.md).
 
-### 5. Generate a playlist
+### 6. Generate a playlist
 
 ```bash
 python -m playlist_rag.cli.generate "música tranquila para estudiar 2 horas sin reggaetón"
@@ -88,7 +101,7 @@ Requires indexed data, HNSW migration (`alembic upgrade head`), and `OPENAI_API_
 See [`docs/generation_pipeline.md`](docs/generation_pipeline.md) for stages,
 schemas, filters, sequencing, and CLI reference.
 
-### 6. Evaluate (optional)
+### 7. Evaluate (optional)
 
 ```bash
 python -m playlist_rag.cli.evaluate --dataset eval/queries.jsonl --limit 1
@@ -96,7 +109,7 @@ python -m playlist_rag.cli.evaluate --dataset eval/queries.jsonl --limit 1
 
 See [`docs/evaluation.md`](docs/evaluation.md) for metrics, dataset format, and cost notes.
 
-### 7. Launch the web UI
+### 8. Launch the web UI
 
 ```bash
 streamlit run playlist_rag/ui/app.py
