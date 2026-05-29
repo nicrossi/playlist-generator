@@ -633,12 +633,28 @@ def _features_to_jsonable(feats: AudioFeatures) -> dict:
     return json.loads(feats.model_dump_json())
 
 
-def _features_to_csv_row(feats: AudioFeatures) -> dict[str, str]:
+# Manifest -> Spotify-CSV identity fields copied verbatim onto a feature row.
+_MANIFEST_IDENTITY_COLS = (
+    "track_id", "track_artist", "track_name", "track_album_name",
+    "track_album_id", "track_album_release_date", "track_popularity",
+)
+
+
+def load_manifest(path: Path) -> dict[str, dict[str, str]]:
+    """Read a download manifest into {slug: row}; slug joins to the WAV stem."""
+    with path.open(newline="", encoding="utf-8") as f:
+        return {row["slug"]: row for row in csv.DictReader(f)}
+
+
+def _features_to_csv_row(
+    feats: AudioFeatures, manifest: dict[str, dict[str, str]] | None = None
+) -> dict[str, str]:
     """Map AudioFeatures to a row matching the Spotify audio_features CSV schema.
 
     Spotify metadata columns we can't infer from audio (track_artist, playlist_*,
-    Spotify ids/URLs) are emitted as empty strings. `liveness` and `time_signature`
-    are unsupported by this extractor (see AudioFeatures docstring).
+    Spotify ids/URLs) are emitted as empty strings unless a manifest supplies them
+    (keyed by WAV stem). `liveness` and `time_signature` are unsupported by this
+    extractor (see AudioFeatures docstring).
     """
     j = json.loads(feats.model_dump_json())  # picks up rounded floats
     def _maybe(key: str) -> str:
@@ -663,6 +679,9 @@ def _features_to_csv_row(feats: AudioFeatures) -> dict[str, str]:
         "track_name": Path(feats.source_path).stem,
         "type": "audio_features",
     })
+    entry = manifest.get(Path(feats.source_path).stem) if manifest else None
+    if entry:
+        row.update({c: entry.get(c, "") for c in _MANIFEST_IDENTITY_COLS})
     return row
 
 
@@ -675,6 +694,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", help="Write results to file instead of stdout")
     parser.add_argument("--csv", action="store_true", help="Emit Spotify-compatible CSV instead of JSON")
     parser.add_argument("--no-header", action="store_true", help="Skip CSV header (use when appending to an existing CSV)")
+    parser.add_argument("--manifest", help="Download manifest CSV; stamps track_id/artist/title onto rows by WAV stem")
     parser.add_argument("--validate", metavar="CSV", help="Validate features against expected values CSV")
     args = parser.parse_args(argv)
 
@@ -709,13 +729,14 @@ def main(argv: list[str] | None = None) -> int:
         features.append(feats)
 
     if args.csv:
+        manifest = load_manifest(Path(args.manifest)) if args.manifest else None
         target = open(args.output, "w", newline="") if args.output else sys.stdout
         try:
             writer = csv.DictWriter(target, fieldnames=SPOTIFY_CSV_COLUMNS)
             if not args.no_header:
                 writer.writeheader()
             for f in features:
-                writer.writerow(_features_to_csv_row(f))
+                writer.writerow(_features_to_csv_row(f, manifest))
         finally:
             if args.output:
                 target.close()

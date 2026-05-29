@@ -298,3 +298,30 @@ needed for that).
 **Why:** Three boundaries, three validation points. Typos and shape drift
 become exceptions at construction time, not silent data corruption miles
 downstream.
+
+### Fresh tracks glue on the slug, not on coupling
+
+**Chose:** `download_top50.py` emits a `manifest.csv` keyed by WAV `slug`;
+`extract_features.py` recovers the slug from the WAV stem and stamps identity
+onto each feature row; `unify.py` takes `--spotify-fresh` CSVs and concatenates
+them last. One orchestrator (`ingest_fresh.py`) chains download → extract →
+unify → index. See [`fresh_track_ingestion.md`](fresh_track_ingestion.md).
+
+**Why:** The two scripts were already Spotify-schema-compatible but shared no
+key — the extracted CSV left `track_id`/`track_artist` empty, and the indexer
+keys on `track_id`, so fresh tracks collided on `""`. The slug is the one value
+both stages already compute, so threading it through fixes identity without
+coupling the DSP extractor to the catalog. `extract_features.py` stays usable
+standalone (manifest is optional).
+
+**Batch, not runtime fallback.** Fresh ingestion is offline (YouTube download +
+Essentia = seconds-to-minutes per track). A runtime "cache miss → extract"
+hook would put minutes of network/DSP latency on the query path; the generation
+pipeline instead relaxes filters (`playlist/pipeline.py`) against the
+already-indexed catalog.
+
+**Real Spotify ids via search.** Audio-features API is deprecated (Nov 2024),
+but search still resolves identity. A rapidfuzz guard rejects bad hits;
+misses/`--no-spotify` fall back to a deterministic `fresh:<slug>` id so the
+pipeline never stalls. Fresh rows concatenate last so dedupe keeps canonical
+Kaggle rows — fresh only adds new tracks, never overwrites existing features.

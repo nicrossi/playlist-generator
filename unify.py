@@ -103,8 +103,14 @@ def extract_primary_artist(artists_field: str) -> str:
     return artists_field.split(",")[0].strip()
 
 
-def load_and_concat_spotify(popular_csv: Path, obscure_csv: Path) -> pd.DataFrame:
-    """Load both Spotify CSVs, tag with popularity_tier, concat."""
+def load_and_concat_spotify(
+    popular_csv: Path, obscure_csv: Path, fresh_csvs: list[Path] | None = None
+) -> pd.DataFrame:
+    """Load Spotify CSVs (+ optional Essentia-extracted fresh CSVs), tag tier, concat.
+
+    Fresh frames go last so dedupe's "first" keeps a canonical Kaggle row whenever a
+    fresh track_id already exists; fresh rows only add genuinely new tracks.
+    """
     print(f"Loading Spotify popular: {popular_csv}")
     df_pop = pd.read_csv(popular_csv)
     df_pop["popularity_tier"] = "popular"
@@ -113,8 +119,18 @@ def load_and_concat_spotify(popular_csv: Path, obscure_csv: Path) -> pd.DataFram
     df_obs = pd.read_csv(obscure_csv)
     df_obs["popularity_tier"] = "obscure"
 
-    df = pd.concat([df_pop, df_obs], ignore_index=True)
-    print(f"  Combined rows: {len(df):,} ({len(df_pop):,} popular + {len(df_obs):,} obscure)")
+    frames = [df_pop, df_obs]
+    fresh_count = 0
+    for path in fresh_csvs or []:
+        print(f"Loading fresh (Essentia): {path}")
+        df_fresh = pd.read_csv(path)
+        df_fresh["popularity_tier"] = "fresh"
+        frames.append(df_fresh)
+        fresh_count += len(df_fresh)
+
+    df = pd.concat(frames, ignore_index=True)
+    print(f"  Combined rows: {len(df):,} ({len(df_pop):,} popular + "
+          f"{len(df_obs):,} obscure + {fresh_count:,} fresh)")
     return df
 
 
@@ -329,15 +345,54 @@ def write_match_report(joined: pd.DataFrame, report_dir: Path) -> None:
     print(f"  Artifacts:        {report_dir}/")
 
 
+# Genius columns added to every row so the parquet schema matches the full
+# pipeline even when no Genius join runs (fresh-only mode).
+_GENIUS_NULL_COLS = {
+    "lyrics": None, "genius_tag": None, "language": None,
+    "genius_year": None, "genius_id": None,
+}
+
+
+def build_fresh_parquet(fresh_csvs: list[Path], out: Path) -> int:
+    """Fresh-only path: dedupe Essentia tracks, write parquet with no Genius join.
+
+    The whole-catalog rebuild (concat base CSVs, re-stream 8.4 GB Genius) is skipped.
+    Lyrics are filled later by the lyrics.ovh backfill; the indexer skips track_ids
+    already complete, so re-running only embeds genuinely new tracks.
+    """
+    print("=== Fresh-only: Spotify (Essentia) ===")
+    frames = []
+    for path in fresh_csvs:
+        print(f"Loading fresh (Essentia): {path}")
+        df = pd.read_csv(path)
+        df["popularity_tier"] = "fresh"
+        frames.append(df)
+    spotify = dedupe_spotify(pd.concat(frames, ignore_index=True))
+
+    joined = spotify.assign(_match_type="fresh_no_genius", **_GENIUS_NULL_COLS)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    joined.to_parquet(out, index=False)
+    print(f"\nWrote fresh parquet: {out} ({len(joined):,} rows, no Genius join)")
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--spotify-popular", type=Path, required=True)
-    p.add_argument("--spotify-obscure", type=Path, required=True)
-    p.add_argument("--genius", type=Path, required=True)
+    p.add_argument("--spotify-popular", type=Path)
+    p.add_argument("--spotify-obscure", type=Path)
+    p.add_argument("--spotify-fresh", type=Path, nargs="*", default=[],
+                   help="Extra Essentia-extracted CSVs (Spotify schema) for fresh tracks")
+    p.add_argument("--genius", type=Path)
     p.add_argument("--out", type=Path, required=True, help="Output parquet path")
     p.add_argument("--report-dir", type=Path, default=Path("reports"))
+    p.add_argument(
+        "--fresh-only", action="store_true",
+        help="Index only --spotify-fresh tracks; skip base-catalog rebuild and "
+             "Genius join (lyrics backfilled separately). Nightly incremental path.",
+    )
     p.add_argument(
         "--genius-cache", type=Path, default=Path(".cache/genius_index.pkl"),
         help="Pickle cache for the Genius index (~3 GB; speeds up reruns)",
@@ -348,11 +403,26 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    for path, name in [
+    if args.fresh_only:
+        if not args.spotify_fresh:
+            print("error: --fresh-only requires --spotify-fresh", file=sys.stderr)
+            return 1
+        for path in args.spotify_fresh:
+            if not path.exists():
+                print(f"error: --spotify-fresh file not found: {path}", file=sys.stderr)
+                return 1
+        return build_fresh_parquet(args.spotify_fresh, args.out)
+
+    required = [
         (args.spotify_popular, "spotify-popular"),
         (args.spotify_obscure, "spotify-obscure"),
         (args.genius, "genius"),
-    ]:
+    ]
+    for path, name in required:
+        if path is None:
+            print(f"error: --{name} is required (or use --fresh-only)", file=sys.stderr)
+            return 1
+    for path, name in required + [(p, "spotify-fresh") for p in args.spotify_fresh]:
         if not path.exists():
             print(f"error: --{name} file not found: {path}", file=sys.stderr)
             return 1
@@ -361,7 +431,9 @@ def main() -> int:
         args.genius_cache.unlink()
 
     print("=== Step 1: Spotify ===")
-    spotify = load_and_concat_spotify(args.spotify_popular, args.spotify_obscure)
+    spotify = load_and_concat_spotify(
+        args.spotify_popular, args.spotify_obscure, args.spotify_fresh
+    )
     spotify = dedupe_spotify(spotify)
     spotify = add_match_keys_spotify(spotify)
 
