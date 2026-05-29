@@ -8,6 +8,10 @@ and returns a sequenced playlist with per-track explanations.
 The repo covers **data ingestion, indexing, and playlist generation** from
 natural-language queries.
 
+<p align="center">
+  <img src="docs/data_and_indexing_pipeline.png" alt="Data and indexing pipeline" width="800">
+</p>
+
 ## Components
 
 | Component | What it does | Deep dive |
@@ -35,8 +39,17 @@ you only need the indexing pipeline.
 
 ### 1. Get the data
 
-```bash
-# Kaggle datasets (popular + obscure Spotify + Genius lyrics) → data/
+```text
+Kaggle datasets (popular + obscure Spotify + Genius lyrics) → data/
+
+Ameh, S. (s.f.). Spotify Music Dataset. Kaggle.
+https://www.kaggle.com/datasets/solomonameh/spotify-music-dataset/data?select=high_popularity_spotify_data.csv
+
+GDCJ, C. (s.f.). Genius Song Lyrics. Kaggle.
+https://www.kaggle.com/datasets/carlosgdcj/genius-song-lyrics-with-language-information/data
+
+Nxods, A. (s.f.). Spotify Top 50 Playlist Songs. Kaggle.
+https://www.kaggle.com/datasets/anxods/spotify-top-50-playlist-songs-anxods
 ```
 
 ### 2. Unify Spotify + Genius
