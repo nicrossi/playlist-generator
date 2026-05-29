@@ -15,6 +15,7 @@ natural-language queries.
 | `download_top50.py` | Pulls Kaggle Top-50 dataset, resolves each row via YouTube + `yt-dlp`, saves WAVs. | [`docs/download_top50.md`](docs/download_top50.md) |
 | `extract_features.py` | Spotify-compatible audio features from local WAV (Essentia + MusiCNN). | [`docs/extract_features.md`](docs/extract_features.md) |
 | `unify.py` | Fuzzy-joins two Spotify CSVs with the Genius lyrics CSV into one parquet catalog. | [`docs/dataset_unification.md`](docs/dataset_unification.md) |
+| `ingest_fresh.py` | One-command fresh-track path: download → extract → resolve Spotify id → unify → index. | [`docs/fresh_track_ingestion.md`](docs/fresh_track_ingestion.md) |
 | `playlist_rag/` | Indexes the unified parquet → LLM description + embedding → Postgres + pgvector. | [`docs/indexing_pipeline.md`](docs/indexing_pipeline.md) |
 | `playlist_rag.cli.generate` | NL query → hybrid retrieval → ranked, sequenced playlist + explanation. | [`docs/generation_pipeline.md`](docs/generation_pipeline.md) |
 | `playlist_rag.cli.evaluate` | RAG metrics: context precision/recall, faithfulness, answer relevance. | [`docs/evaluation.md`](docs/evaluation.md) |
@@ -81,13 +82,23 @@ alembic upgrade head                    # build HNSW index after bulk load
 See [`docs/indexing_pipeline.md`](docs/indexing_pipeline.md) for the full
 indexer reference (stages, schema, resumability, error handling).
 
-### 5. Extract features for tracks outside the dataset
+### 5. (Optional) Add tracks outside the dataset
+
+Download audio, extract Spotify-compatible features locally, resolve a real
+Spotify `track_id`, and fold the tracks into the same parquet + index — in one
+command:
 
 ```bash
-python extract_features.py tracks/top50/*.wav --csv --output top50_features.csv
+python ingest_fresh.py \
+    --spotify-popular data/high_popularity_spotify_data.csv \
+    --spotify-obscure data/low_popularity_spotify_data.csv \
+    --genius data/genius_song_lyrics.csv \
+    --out data/unified_tracks.parquet \
+    --limit 50
 ```
 
-See [`docs/extract_features.md`](docs/extract_features.md).
+Needs `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` in `.env` (or `--no-spotify`
+for synthetic ids). See [`docs/fresh_track_ingestion.md`](docs/fresh_track_ingestion.md).
 
 ### 6. Generate a playlist
 

@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     )
 
     openai_api_key: str = ""
+    spotify_client_id: str = ""
+    spotify_client_secret: str = ""
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.3
     llm_max_retries: int = 3

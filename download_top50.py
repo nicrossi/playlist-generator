@@ -14,11 +14,50 @@ TRACK_COLS = ("track_name", "song", "name", "title")
 ARTIST_COLS = ("artists", "artist", "track_artist")
 DURATION_COLS = ("duration_ms", "duration", "track_duration_ms")
 
+# Manifest columns; the slug joins this back to the extracted-features rows.
+MANIFEST_COLS = (
+    "slug", "track_id", "track_artist", "track_name", "track_album_name",
+    "track_album_id", "track_album_release_date", "track_popularity",
+    "duration_ms", "id_source", "status",
+)
+
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
 def slugify(text: str) -> str:
     return _SLUG_RE.sub("_", text.lower()).strip("_")
+
+
+def resolve_identity(artist: str, title: str, slug: str, client) -> dict[str, object]:
+    """Build a manifest row, using a real Spotify track_id when client is set.
+
+    Falls back to a deterministic synthetic id so downstream stages always have
+    a stable primary key, even offline or when search misses.
+    """
+    row = {c: "" for c in MANIFEST_COLS}
+    row.update(slug=slug, track_artist=artist, track_name=title,
+               track_id=f"fresh:{slug}", id_source="synthetic")
+    if client is None:
+        return row
+    match = client.search_track(artist, title)
+    if match is None:
+        return row
+    row.update(
+        track_id=match.track_id, track_artist=match.track_artist,
+        track_name=match.track_name, track_album_name=match.track_album_name,
+        track_album_id=match.track_album_id,
+        track_album_release_date=match.track_album_release_date,
+        track_popularity=match.track_popularity, duration_ms=match.duration_ms,
+        id_source="spotify",
+    )
+    return row
+
+
+def write_manifest(path: Path, rows: list[dict[str, object]]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=MANIFEST_COLS)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def setup_kaggle_env() -> None:
@@ -162,9 +201,19 @@ def main() -> int:
     p.add_argument("--dry-run", action="store_true", help="print queries only")
     p.add_argument("--cookies-from-browser", default=None,
                    help="browser to source cookies from (e.g. chrome, firefox, safari) for YouTube bot-check")
+    p.add_argument("--manifest", type=Path, default=None,
+                   help="manifest CSV path (default: <output-dir>/manifest.csv)")
+    p.add_argument("--no-spotify", action="store_true",
+                   help="skip Spotify lookup; use synthetic fresh:<slug> ids")
     args = p.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = args.manifest or args.output_dir / "manifest.csv"
+
+    client = None
+    if not args.no_spotify and not args.dry_run:
+        from playlist_rag.ingest.spotify_lookup import SpotifyClient
+        client = SpotifyClient()
 
     with tempfile.TemporaryDirectory() as tmp:
         csv_path = download_dataset(args.dataset, Path(tmp))
@@ -181,22 +230,33 @@ def main() -> int:
         return 0
 
     counts = {"downloaded": 0, "skipped": 0, "failed": 0}
+    manifest: list[dict[str, object]] = []
     for i, (artist, title, expected_ms) in enumerate(tracks, 1):
         prefix = f"[{i}/{len(tracks)}]"
+        slug = slugify(f"{artist}_{title}")
+        row = resolve_identity(artist, title, slug, client)
+        # Spotify duration backstops the YouTube winner scorer when the dataset omits it.
+        effective_ms = expected_ms or (int(row["duration_ms"]) if row["duration_ms"] else None)
         try:
             slug, status, delta_ms = download_track(
-                artist, title, expected_ms, args.output_dir, args.cookies_from_browser
+                artist, title, effective_ms, args.output_dir, args.cookies_from_browser
             )
             counts[status if status in ("downloaded", "skipped") else "failed"] += 1
             delta_str = ""
-            if delta_ms is not None and expected_ms is not None:
-                delta_str = f" (Δ={delta_ms / 1000:+.0f}s vs spotify {expected_ms / 1000:.0f}s)"
-            print(f"{prefix} {status}: {slug}{delta_str}")
+            if delta_ms is not None and effective_ms is not None:
+                delta_str = f" (Δ={delta_ms / 1000:+.0f}s vs {effective_ms / 1000:.0f}s)"
+            print(f"{prefix} {status} [{row['id_source']}]: {slug}{delta_str}")
         except Exception as e:
+            status = "failed"
             counts["failed"] += 1
             print(f"{prefix} failed: {artist} - {title}: {e}")
+        row["status"] = status
+        manifest.append(row)
 
-    print(f"\n{counts['downloaded']} downloaded, {counts['skipped']} skipped, {counts['failed']} failed")
+    write_manifest(manifest_path, manifest)
+    print(f"\n{counts['downloaded']} downloaded, {counts['skipped']} skipped, "
+          f"{counts['failed']} failed")
+    print(f"wrote manifest: {manifest_path} ({len(manifest)} rows)")
     return 1 if counts["failed"] else 0
 
 
